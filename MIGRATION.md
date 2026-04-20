@@ -46,6 +46,10 @@ Two orchestrators (also in the shared package):
 
 ### Phase 0 — Skeleton ✅ DONE (2026-04-20)
 
+- `mds_python` commit: `c07cf8a` on branch `intepret` (pre-refactor baseline: `6ec8eb6`)
+- `fairscape_interpret` commit: `6ddf89a` (initial)
+
+
 Pure helpers, prompts, runtime utilities, models, condensation helpers extracted.
 
 - [x] `fairscape_interpret/` package created as sibling at repo root
