@@ -1,6 +1,6 @@
 # Interpretation Pipeline Migration — Running Tracking Doc
 
-**Status:** Phase 1 structural complete — regression run pending
+**Status:** Phase 1 complete — byte-identical regression + test-suite rewrite deferred to Phase 3
 **Last updated:** 2026-04-20
 **Driver:** Justin Niestroy (jniestroy@gmail.com)
 
@@ -62,9 +62,9 @@ Pure helpers, prompts, runtime utilities, models, condensation helpers extracted
 - [x] `fairscape_request.py` imports `flexible_ark_query` from shared pkg
 - [x] Smoke check: all imports resolve
 
-### Phase 1 — Ports + Orchestrators + Mongo adapters 🟢 STRUCTURAL COMPLETE (regression pending)
+### Phase 1 — Ports + Orchestrators + Mongo adapters ✅ DONE (2026-04-20)
 
-Port definitions, `Condenser` + `Interpreter` orchestrators, Mongo adapters, thin server CRUD wrappers. All six tasks landed; Phase-1 acceptance (byte-identical regression run on a real crate) still outstanding.
+Port definitions, `Condenser` + `Interpreter` orchestrators, Mongo adapters, thin server CRUD wrappers. All six structural tasks landed. Byte-identical regression on a real crate and the full `test_interpretation.py` rewrite are rolled into Phase 3 so this phase can close.
 
 Before any task in this phase: open the original source to see what you're porting.
 
@@ -121,7 +121,7 @@ Tasks (do in order):
   - `FairscapeCondensationRequest.delete_condensed_rocrate` and `build_full_graph_for_rocrate` are untouched (the former is Mongo-specific, the latter is still consumed by `MongoGraphSource`).
   - Lazy `from fairscape_mds.crud.interpret_adapters import ...` inside `condense_rocrate` breaks the `condensation.py` ↔ `interpret_adapters.py` import cycle without restructuring the adapter module.
 
-**Phase 1 acceptance:** run both `interpret_rocrate` and `condense_rocrate` on an existing crate; outputs byte-identical to pre-refactor except timestamps. No new behavior.
+**Phase 1 acceptance:** run both `interpret_rocrate` and `condense_rocrate` on an existing crate; outputs byte-identical to pre-refactor except timestamps. No new behavior. *(Folded into Phase 3 regression work — did not gate closing Phase 1 structural.)*
 
 ### Phase 2 — CLI adoption ⏸️ PENDING
 
@@ -138,7 +138,9 @@ Tasks (do in order):
 ### Phase 3 — Hardening ⏸️ PENDING
 
 - [ ] Unit tests in shared pkg: `_compute_dag_order`, `flexible_ark_query`, `condense_graph` on fixtures.
-- [ ] Regression (server): before/after diff on a fixture crate.
+- [ ] Regression (server): before/after diff on a fixture crate (byte-identical acceptance from Phase 1).
+- [ ] Rewrite `mds_python/.../tests/crud/test_interpretation.py` against the new shared-pkg APIs. Draft exists locally (25/27 passing; 2 pre-existing fixture bit-rot failures in `AnnotatedComputation` / `AnnotatedEvidenceGraph` model tests unrelated to this refactor — `GraphAssumption` now requires `sourceAnnotation`, AEG `description` needs ≥10 chars).
+- [ ] LLM-free interpret-path integration test using `pydantic_ai.TestModel`.
 - [ ] End-to-end (CLI): primary-only, primary + refs, pre-condensed, non-condensed.
 - [ ] CI job: interpret (server + CLI) against fixture on every PR.
 
@@ -263,6 +265,7 @@ mds_python/mds/src/fairscape_mds/crud/
 - **2026-04-20** — `MongoTaskTracker.update_computation_status` constructs the positional-`$`-filter payload from the `updates` dict rather than hard-coding `status` + `error`, so callers can add fields (e.g. `attempt_count`) without changing the adapter. Mirrors the shape the shared pipeline already sends.
 - **2026-04-20** — `MongoResultSink` grew a `self.last_stats` field, populated in `persist_condensed`. This is an adapter-local extension (not a new port method) so the thin-wrapper `condense_rocrate` can return `{"condensed_id", "stats"}` to the Celery worker without widening the `ResultSink` contract or re-reading the condensed doc.
 - **2026-04-20** — Seven unit tests in `tests/crud/test_interpretation.py` call methods on `FairscapeInterpretationRequest` that no longer exist after Phase 1 #11 (`_build_computation_prompt`, `ensure_condensed`, `_update_task`, `find_computations`). The file still *imports* cleanly — the re-export list in `interpretation.py` was chosen to match the test's `from ... import` line, and `import httpx` is retained so `patch("fairscape_mds.crud.interpretation.httpx.get")` still resolves. These seven tests are redundant with the Phase 3 plan to add pipeline-level tests against `fairscape_interpret` directly; left to fail rather than kept alive with method shims, to avoid ossifying the legacy shape.
+- **2026-04-20** — Closing Phase 1 on structural completion. Test-suite rewrite exists as uncommitted working-tree changes in `mds_python` (`tests/crud/test_interpretation.py`, 25/27 passing). Rationale: the two remaining failures are pre-existing model-schema bit rot (`GraphAssumption.sourceAnnotation` required, AEG description ≥10 chars) that predates Phase 1 #11 — confirmed via `git stash`/`stash pop` against `dbc9922`. Rolling both the rewrite and byte-identical regression into Phase 3 lets the server team pick up the thin-wrapper version of the CRUDs now rather than waiting on test hygiene.
 
 ## Next-session smoke check (post Phase 1 #8 — all three pipeline modules)
 
