@@ -105,10 +105,11 @@ Tasks (do in order):
     - `annotate_computations_async(tracker, computations, software_cache, index, llm_model, temperature, max_workers=2, stats_cache=None, rate_limiter=None)` — was `_annotate_computations_async` (545–603). Uses `tracker.update_computation_status` and `tracker.increment_completed` in place of direct Mongo `$set`/`$inc`.
     - `annotate_computations_parallel(...)` — sync wrapper via `run_async` (605–621).
   - **Note on prefetch functions:** `prefetch_all_software` and `prefetch_dataset_statistics` in the server class are thin loops over `SoftwareFetcher.fetch` and `GraphSource.find_dataset_stats`. They can stay inside `Interpreter` (the orchestrator) — no need to put them in `pipeline/`.
-- [ ] **#9 — `fairscape_interpret/src/fairscape_interpret/interpreter.py`** — `Interpreter` class.
+- [x] **#9 — `fairscape_interpret/src/fairscape_interpret/interpreter.py`** — `Interpreter` class. *(done)*
   - `__init__(self, graph: GraphSource, sink: ResultSink, tracker: TaskTracker, software: SoftwareFetcher, condenser: Condenser, config: InterpretConfig)`
-  - `InterpretConfig` dataclass: llm_model, temperature, persona, max_concurrency, rate_limiter params
-  - `run_sync(rocrate_id) -> str` and `run_async(rocrate_id) -> str` — returns stored AEG id
+  - `InterpretConfig` dataclass: llm_model, temperature, max_workers, rate_limiter_max_requests, rate_limiter_window_seconds
+  - `run_sync(rocrate_id) -> str` and `run_async(rocrate_id) -> str` (the async variant delegates to `asyncio.to_thread(self.run_sync, ...)` — see decision below)
+  - `find_computations`, `_prefetch_software`, `_prefetch_stats` are methods on `Interpreter` (not in `pipeline/`), matching the plan note.
 - [ ] **#10 — `mds_python/mds/src/fairscape_mds/crud/interpret_adapters.py`** — 4 Mongo-backed adapters.
   - `MongoGraphSource(FairscapeRequest)` — wraps `flexibleFind`, batch `identifierCollection.find`, reuses `build_full_graph_for_rocrate` logic from `condensation.py`.
   - `MongoResultSink(config)` — both `persist_condensed` and `persist_aeg`. Owns `StoredIdentifier`/`Permissions`/`PublicationStatusEnum` wrapping. Writes back-pointers.
@@ -254,6 +255,8 @@ mds_python/mds/src/fairscape_mds/crud/
 - **2026-04-20** — `GraphSynthesisResult` lives in `pipeline/synthesize.py`, not in a shared models module. `build.py` imports it from there.
 - **2026-04-20** — `annotate_single_computation` signature dropped the optional `software`/`graph` parameters listed in the Phase 1 #8 plan. Rationale: the original `_annotate_single_computation` never consumed a `SoftwareFetcher` or raw `graph` — `software_cache` and `index` already cover its needs, and the orchestrator is responsible for prefetching. Added YAGNI-style; can be reintroduced if lazy-fetch ever replaces the prefetch pass.
 - **2026-04-20** — `MAX_PROMPT_DATASETS = 3` is defined as a module-level constant in `pipeline/annotate.py`. `MAX_STATS_COLUMNS` stays in `mds_python/interpretation.py` for now — it is unused by the shared code path.
+- **2026-04-20** — `InterpretConfig` omits the `persona` field listed in the plan. Rationale: the datasci persona is the only one exercised today (audience syntheses are intentionally disabled per the earlier decision) and adding a field we do not read is YAGNI. Reintroduce when audience syntheses are re-enabled.
+- **2026-04-20** — `Interpreter.run_async` is an `asyncio.to_thread` wrapper over `run_sync`, not a genuinely async pipeline. Rationale: the internal `annotate_computations_async` / `synthesize_graph` paths already manage their own event loops (via `fairscape_interpret.runtime.run_async`), so nesting them inside the caller's loop would collide. The wrapper preserves the planned `async def` interface for callers that are already inside an event loop without requiring a second implementation. Rewrite to a native async flow only when a consumer actually demands one.
 
 ## Next-session smoke check (post Phase 1 #8 — all three pipeline modules)
 
