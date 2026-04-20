@@ -75,18 +75,20 @@ git -C /Users/justin/Docs/Tim_Work/Git_Repos/fairscape-repos/mds_python show 6ec
 
 Tasks (do in order):
 
-- [ ] **#6 — `fairscape_interpret/src/fairscape_interpret/ports.py`** — 4 Protocols.
+- [x] **#6 — `fairscape_interpret/src/fairscape_interpret/ports.py`** — 4 Protocols. *(done)*
   - `GraphSource.find_entity(ark) -> dict | None`
-  - `GraphSource.find_dataset_stats(arks) -> dict[str, dict]`
+  - `GraphSource.find_dataset_stats(arks: Iterable[str]) -> dict[str, dict]`
   - `GraphSource.build_full_graph(rocrate_id) -> list[dict]`
-  - `ResultSink.persist_condensed(graph, source_id, stats) -> str`
-  - `ResultSink.persist_aeg(aeg, rocrate_id, step_annotation_ids) -> str`
+  - `ResultSink.persist_condensed(condensed_id, condensed_metadata, source_rocrate_id, stats) -> str`
+  - `ResultSink.persist_aeg(aeg, rocrate_id, step_annotations) -> str`
   - `TaskTracker.update(updates: dict) -> None`
   - `TaskTracker.update_computation_status(comp_id, updates) -> None`
   - `TaskTracker.increment_completed() -> None`
-  - `TaskTracker.push_llm_result(label, output) -> None`
-  - `TaskTracker.read() -> dict`
+  - `TaskTracker.push_llm_result(label, raw_output) -> None`
   - `SoftwareFetcher.fetch(software_node) -> str`
+  - **Note:** initial task config is NOT on `TaskTracker`. Server adapter reads
+    `asyncCollection` to build the `InterpretConfig` before constructing
+    `Interpreter`; CLI builds it from Click args. Keeps the tracker write-only.
 - [ ] **#7 — `fairscape_interpret/src/fairscape_interpret/condenser.py`** — `Condenser` class.
   - `__init__(self, source: GraphSource, sink: ResultSink, threshold=5, max_member_ids=0)`
   - `condense(rocrate_id) -> str` — build graph → condense → persist, return condensed-id
