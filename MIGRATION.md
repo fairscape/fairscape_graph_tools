@@ -110,11 +110,11 @@ Tasks (do in order):
   - `InterpretConfig` dataclass: llm_model, temperature, max_workers, rate_limiter_max_requests, rate_limiter_window_seconds
   - `run_sync(rocrate_id) -> str` and `run_async(rocrate_id) -> str` (the async variant delegates to `asyncio.to_thread(self.run_sync, ...)` — see decision below)
   - `find_computations`, `_prefetch_software`, `_prefetch_stats` are methods on `Interpreter` (not in `pipeline/`), matching the plan note.
-- [ ] **#10 — `mds_python/mds/src/fairscape_mds/crud/interpret_adapters.py`** — 4 Mongo-backed adapters.
-  - `MongoGraphSource(FairscapeRequest)` — wraps `flexibleFind`, batch `identifierCollection.find`, reuses `build_full_graph_for_rocrate` logic from `condensation.py`.
-  - `MongoResultSink(config)` — both `persist_condensed` and `persist_aeg`. Owns `StoredIdentifier`/`Permissions`/`PublicationStatusEnum` wrapping. Writes back-pointers.
+- [x] **#10 — `mds_python/mds/src/fairscape_mds/crud/interpret_adapters.py`** — 4 Mongo-backed adapters. *(done)*
+  - `MongoGraphSource(FairscapeRequest)` — wraps `flexibleFind`, batch `identifierCollection.find`, reuses `build_full_graph_for_rocrate` via a composed `FairscapeCondensationRequest`.
+  - `MongoResultSink(config, *, owner_email=...)` — both `persist_condensed` and `persist_aeg`. Owns `StoredIdentifier`/`Permissions`/`PublicationStatusEnum` wrapping and back-pointer writes.
   - `MongoTaskTracker(config, task_guid)` — `asyncCollection` writes.
-  - `ServerSoftwareFetcher(config, user_token)` — `/software/download/` with `baseUrl → internalUrl` rewrite; GitHub fallback.
+  - `ServerSoftwareFetcher(config, user_token)` — `/software/download/` with `baseUrl → internalUrl` rewrite; GitHub fallback via shared `prefetch_software_code`.
 - [ ] **#11 — Shrink server CRUD classes** to thin wrappers (~80 lines each).
   - `FairscapeInterpretationRequest.interpret_rocrate(task_guid, user_token)` → build 4 Mongo adapters → `Interpreter.run_sync(rocrate_id_from_task)`
   - `FairscapeCondensationRequest.condense_rocrate(rocrate_id, ...)` → build `MongoGraphSource` + `MongoResultSink` → `Condenser.condense(rocrate_id)`
@@ -257,6 +257,9 @@ mds_python/mds/src/fairscape_mds/crud/
 - **2026-04-20** — `MAX_PROMPT_DATASETS = 3` is defined as a module-level constant in `pipeline/annotate.py`. `MAX_STATS_COLUMNS` stays in `mds_python/interpretation.py` for now — it is unused by the shared code path.
 - **2026-04-20** — `InterpretConfig` omits the `persona` field listed in the plan. Rationale: the datasci persona is the only one exercised today (audience syntheses are intentionally disabled per the earlier decision) and adding a field we do not read is YAGNI. Reintroduce when audience syntheses are re-enabled.
 - **2026-04-20** — `Interpreter.run_async` is an `asyncio.to_thread` wrapper over `run_sync`, not a genuinely async pipeline. Rationale: the internal `annotate_computations_async` / `synthesize_graph` paths already manage their own event loops (via `fairscape_interpret.runtime.run_async`), so nesting them inside the caller's loop would collide. The wrapper preserves the planned `async def` interface for callers that are already inside an event loop without requiring a second implementation. Rewrite to a native async flow only when a consumer actually demands one.
+- **2026-04-20** — `MongoGraphSource` composes a `FairscapeCondensationRequest` for `build_full_graph` rather than inheriting from it. Rationale: inheritance would surface `condense_rocrate`/`delete_condensed_rocrate` on the adapter, which aren't part of the `GraphSource` port and don't belong on a port-shaped object. `_flatten_metadata` is duplicated from `condensation.py` (5 lines) to avoid reaching into a private helper across the module boundary.
+- **2026-04-20** — `MongoResultSink.persist_condensed` ignores the separate `stats` argument because by the time it runs, `Condenser._assemble_metadata` has already written `evi:condensationStats` onto the root node. The extra arg is part of the port contract; preserving its position keeps the door open for sinks that want to log stats separately without rummaging through the metadata.
+- **2026-04-20** — `MongoTaskTracker.update_computation_status` constructs the positional-`$`-filter payload from the `updates` dict rather than hard-coding `status` + `error`, so callers can add fields (e.g. `attempt_count`) without changing the adapter. Mirrors the shape the shared pipeline already sends.
 
 ## Next-session smoke check (post Phase 1 #8 — all three pipeline modules)
 
