@@ -1,6 +1,6 @@
 # Interpretation Pipeline Migration — Running Tracking Doc
 
-**Status:** Phase 1 in progress
+**Status:** Phase 1 structural complete — regression run pending
 **Last updated:** 2026-04-20
 **Driver:** Justin Niestroy (jniestroy@gmail.com)
 
@@ -62,9 +62,9 @@ Pure helpers, prompts, runtime utilities, models, condensation helpers extracted
 - [x] `fairscape_request.py` imports `flexible_ark_query` from shared pkg
 - [x] Smoke check: all imports resolve
 
-### Phase 1 — Ports + Orchestrators + Mongo adapters 🟡 IN PROGRESS
+### Phase 1 — Ports + Orchestrators + Mongo adapters 🟢 STRUCTURAL COMPLETE (regression pending)
 
-Port definitions, `Condenser` + `Interpreter` orchestrators, Mongo adapters, thin server CRUD wrappers.
+Port definitions, `Condenser` + `Interpreter` orchestrators, Mongo adapters, thin server CRUD wrappers. All six tasks landed; Phase-1 acceptance (byte-identical regression run on a real crate) still outstanding.
 
 Before any task in this phase: open the original source to see what you're porting.
 
@@ -115,10 +115,11 @@ Tasks (do in order):
   - `MongoResultSink(config, *, owner_email=...)` — both `persist_condensed` and `persist_aeg`. Owns `StoredIdentifier`/`Permissions`/`PublicationStatusEnum` wrapping and back-pointer writes.
   - `MongoTaskTracker(config, task_guid)` — `asyncCollection` writes.
   - `ServerSoftwareFetcher(config, user_token)` — `/software/download/` with `baseUrl → internalUrl` rewrite; GitHub fallback via shared `prefetch_software_code`.
-- [ ] **#11 — Shrink server CRUD classes** to thin wrappers (~80 lines each).
-  - `FairscapeInterpretationRequest.interpret_rocrate(task_guid, user_token)` → build 4 Mongo adapters → `Interpreter.run_sync(rocrate_id_from_task)`
-  - `FairscapeCondensationRequest.condense_rocrate(rocrate_id, ...)` → build `MongoGraphSource` + `MongoResultSink` → `Condenser.condense(rocrate_id)`
-  - `FairscapeCondensationRequest.delete_condensed_rocrate(...)` — keep as-is (Mongo-specific deletion, no shared equivalent).
+- [x] **#11 — Shrink server CRUD classes** to thin wrappers. *(done; mds_python dbc9922)*
+  - `interpretation.py`: 1066 → 88 lines. `FairscapeInterpretationRequest.interpret_rocrate(task_guid, user_token)` loads task config, builds 4 Mongo adapters + `Condenser` + `Interpreter`, calls `interpreter.run_sync(rocrate_id)`. Module-level re-exports (`_build_index`, `_is_computation`, `_is_rocrate_root`, `_resolve_refs`, `prefetch_software_code`, `GraphSynthesisResult`, `httpx`) preserve the import surface the test suite expects.
+  - `condensation.py`: 317 → 251 lines. `FairscapeCondensationRequest.condense_rocrate(...)` pre-checks for an existing condensed crate (preserves 409 text), builds `MongoGraphSource` + `MongoResultSink`, delegates to `Condenser.condense`, maps `ValueError` → 404 and other exceptions → 500. `MongoResultSink.last_stats` carries condensation stats back out.
+  - `FairscapeCondensationRequest.delete_condensed_rocrate` and `build_full_graph_for_rocrate` are untouched (the former is Mongo-specific, the latter is still consumed by `MongoGraphSource`).
+  - Lazy `from fairscape_mds.crud.interpret_adapters import ...` inside `condense_rocrate` breaks the `condensation.py` ↔ `interpret_adapters.py` import cycle without restructuring the adapter module.
 
 **Phase 1 acceptance:** run both `interpret_rocrate` and `condense_rocrate` on an existing crate; outputs byte-identical to pre-refactor except timestamps. No new behavior.
 
@@ -260,6 +261,8 @@ mds_python/mds/src/fairscape_mds/crud/
 - **2026-04-20** — `MongoGraphSource` composes a `FairscapeCondensationRequest` for `build_full_graph` rather than inheriting from it. Rationale: inheritance would surface `condense_rocrate`/`delete_condensed_rocrate` on the adapter, which aren't part of the `GraphSource` port and don't belong on a port-shaped object. `_flatten_metadata` is duplicated from `condensation.py` (5 lines) to avoid reaching into a private helper across the module boundary.
 - **2026-04-20** — `MongoResultSink.persist_condensed` ignores the separate `stats` argument because by the time it runs, `Condenser._assemble_metadata` has already written `evi:condensationStats` onto the root node. The extra arg is part of the port contract; preserving its position keeps the door open for sinks that want to log stats separately without rummaging through the metadata.
 - **2026-04-20** — `MongoTaskTracker.update_computation_status` constructs the positional-`$`-filter payload from the `updates` dict rather than hard-coding `status` + `error`, so callers can add fields (e.g. `attempt_count`) without changing the adapter. Mirrors the shape the shared pipeline already sends.
+- **2026-04-20** — `MongoResultSink` grew a `self.last_stats` field, populated in `persist_condensed`. This is an adapter-local extension (not a new port method) so the thin-wrapper `condense_rocrate` can return `{"condensed_id", "stats"}` to the Celery worker without widening the `ResultSink` contract or re-reading the condensed doc.
+- **2026-04-20** — Seven unit tests in `tests/crud/test_interpretation.py` call methods on `FairscapeInterpretationRequest` that no longer exist after Phase 1 #11 (`_build_computation_prompt`, `ensure_condensed`, `_update_task`, `find_computations`). The file still *imports* cleanly — the re-export list in `interpretation.py` was chosen to match the test's `from ... import` line, and `import httpx` is retained so `patch("fairscape_mds.crud.interpretation.httpx.get")` still resolves. These seven tests are redundant with the Phase 3 plan to add pipeline-level tests against `fairscape_interpret` directly; left to fail rather than kept alive with method shims, to avoid ossifying the legacy shape.
 
 ## Next-session smoke check (post Phase 1 #8 — all three pipeline modules)
 
