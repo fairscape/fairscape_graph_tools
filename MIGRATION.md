@@ -89,10 +89,12 @@ Tasks (do in order):
   - **Note:** initial task config is NOT on `TaskTracker`. Server adapter reads
     `asyncCollection` to build the `InterpretConfig` before constructing
     `Interpreter`; CLI builds it from Click args. Keeps the tracker write-only.
-- [ ] **#7 — `fairscape_interpret/src/fairscape_interpret/condenser.py`** — `Condenser` class.
-  - `__init__(self, source: GraphSource, sink: ResultSink, threshold=5, max_member_ids=0)`
-  - `condense(rocrate_id) -> str` — build graph → condense → persist, return condensed-id
-  - `ensure_condensed(rocrate_id) -> str` — if already condensed (check source or known suffix), return existing id; else `condense()`
+- [x] **#7 — `fairscape_interpret/src/fairscape_interpret/condenser.py`** — `Condenser` class. *(done)*
+  - `__init__(source, sink, *, threshold=5, max_member_ids=0)`
+  - `condense(rocrate_id) -> str` — raises if already condensed (matches `/condense` endpoint behavior).
+  - `ensure_condensed(rocrate_id) -> tuple[list[dict], str, dict]` — returns `(graph, condensed_id, root_node)`. Handles 3 cases: pointer, self-condensed, fresh condense.
+  - Internal `_build_and_persist` returns graph + id so sidecar-only sinks don't need a round-trip through `find_entity`.
+  - Smoke-tested with fake source/sink — all three ensure-paths exercised.
 - [ ] **#8 — Pipeline modules** extracted from `interpretation.py`:
   - `pipeline/annotate.py` — `build_computation_prompt`, `annotate_single_computation`, `annotate_computations_async`, `annotate_computations_parallel`. Takes `TaskTracker` + `SoftwareFetcher` + `GraphSource` as args, not `self`.
   - `pipeline/synthesize.py` — `synthesize_graph`, `GraphSynthesisResult` model.
