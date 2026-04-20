@@ -1,0 +1,28 @@
+[project]
+name = "fairscape-interpret"
+version = "0.1.0"
+description = "Storage-agnostic AI-interpretation pipeline for FAIRSCAPE RO-Crates. Shared core for mds_python (server) and fairscape-cli."
+readme = "README.md"
+authors = [
+    { name = "Justin Niestroy", email = "jniestroy@gmail.com" },
+    { name = "Max Levinson",    email = "mal8ch@virginia.edu" },
+    { name = "Tim Clark",       email = "twc8q@virginia.edu" },
+]
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "pydantic>=2.5.1",
+    "pydantic-ai>=0.1.0",
+    "httpx>=0.28.1",
+    "fairscape_models>=1.1.1",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"fairscape_interpret" = ["py.typed"]
