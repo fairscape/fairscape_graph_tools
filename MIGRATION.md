@@ -95,10 +95,16 @@ Tasks (do in order):
   - `ensure_condensed(rocrate_id) -> tuple[list[dict], str, dict]` — returns `(graph, condensed_id, root_node)`. Handles 3 cases: pointer, self-condensed, fresh condense.
   - Internal `_build_and_persist` returns graph + id so sidecar-only sinks don't need a round-trip through `find_entity`.
   - Smoke-tested with fake source/sink — all three ensure-paths exercised.
-- [ ] **#8 — Pipeline modules** extracted from `interpretation.py`:
-  - `pipeline/annotate.py` — `build_computation_prompt`, `annotate_single_computation`, `annotate_computations_async`, `annotate_computations_parallel`. Takes `TaskTracker` + `SoftwareFetcher` + `GraphSource` as args, not `self`.
-  - `pipeline/synthesize.py` — `synthesize_graph`, `GraphSynthesisResult` model.
-  - `pipeline/build.py` — `build_aeg(root_node, step_annotations, synthesis_result, audience_perspectives) -> AnnotatedEvidenceGraph`. **No persistence.**
+- 🟡 **#8 — Pipeline modules** extracted from `interpretation.py`:
+  - [x] `pipeline/synthesize.py` — `GraphSynthesisResult`, `build_synthesis_prompt`, `synthesize_graph(tracker, root_node, step_annotations, llm_model, temperature, *, rate_limiter=None, graph_dict=None)`. Takes `TaskTracker` instead of `self`.
+  - [x] `pipeline/build.py` — `build_aeg(rocrate_id, graph, step_annotations, synthesis, audience_perspectives, llm_model, temperature) -> AnnotatedEvidenceGraph`. Pure — no persistence, no ports.
+  - [ ] **`pipeline/annotate.py`** — still to do. Extract from `interpretation.py` lines 350–621:
+    - `build_computation_prompt(computation, software_cache, index, stats_cache=None)` — was `_build_computation_prompt` (350–443)
+    - `llm_to_annotated(llm_result, comp_id, llm_model, temperature)` — was `_llm_to_annotated` (444–506)
+    - `annotate_single_computation(tracker, software, graph, computation, software_cache, index, llm_model, temperature, stats_cache=None)` — was `_annotate_single_computation` (507–544). Takes `TaskTracker` + (optionally) `SoftwareFetcher`.
+    - `annotate_computations_async(tracker, computations, software_cache, index, llm_model, temperature, max_workers=2, stats_cache=None, rate_limiter=None)` — was `_annotate_computations_async` (545–603). Uses `tracker.update_computation_status` and `tracker.increment_completed` in place of direct Mongo `$set`/`$inc`.
+    - `annotate_computations_parallel(...)` — sync wrapper via `run_async` (605–621).
+  - **Note on prefetch functions:** `prefetch_all_software` and `prefetch_dataset_statistics` in the server class are thin loops over `SoftwareFetcher.fetch` and `GraphSource.find_dataset_stats`. They can stay inside `Interpreter` (the orchestrator) — no need to put them in `pipeline/`.
 - [ ] **#9 — `fairscape_interpret/src/fairscape_interpret/interpreter.py`** — `Interpreter` class.
   - `__init__(self, graph: GraphSource, sink: ResultSink, tracker: TaskTracker, software: SoftwareFetcher, condenser: Condenser, config: InterpretConfig)`
   - `InterpretConfig` dataclass: llm_model, temperature, persona, max_concurrency, rate_limiter params
@@ -242,4 +248,23 @@ mds_python/mds/src/fairscape_mds/crud/
 
 ## Decisions log
 
-*(empty — add dated entries here if you diverge from the canonical plan)*
+- **2026-04-20** — `synthesize_graph` takes `graph_dict` (keyword) not `index`. The server calls it as `index=index` but the parameter is the same thing (id → node dict). Keep this in mind when wiring the `Interpreter` orchestrator — pass `_build_index(graph)` as `graph_dict=...`.
+- **2026-04-20** — Audience syntheses stay disabled in the loop (commented-out `for aud in AUDIENCE_CONFIGS`). Match server current behavior exactly; do not re-enable without Justin's sign-off.
+- **2026-04-20** — `prefetch_all_software` and `prefetch_dataset_statistics` stay in the `Interpreter` orchestrator (not split into `pipeline/`). They are one-liners over the ports.
+- **2026-04-20** — `GraphSynthesisResult` lives in `pipeline/synthesize.py`, not in a shared models module. `build.py` imports it from there.
+
+## Next-session smoke check (after Phase 1 #8 annotate finishes)
+
+```bash
+PYTHONPATH=/Users/justin/Docs/Tim_Work/Git_Repos/fairscape-repos/fairscape_interpret/src python -c "
+from fairscape_interpret.pipeline.synthesize import GraphSynthesisResult, synthesize_graph
+from fairscape_interpret.pipeline.build import build_aeg
+from fairscape_interpret.pipeline.annotate import (
+    build_computation_prompt, annotate_computations_parallel,
+)
+from fairscape_interpret.condenser import Condenser
+from fairscape_interpret.ports import GraphSource, ResultSink, TaskTracker, SoftwareFetcher
+print('all pipeline + orchestrator + port imports OK')
+"
+```
+
