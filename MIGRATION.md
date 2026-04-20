@@ -95,10 +95,10 @@ Tasks (do in order):
   - `ensure_condensed(rocrate_id) -> tuple[list[dict], str, dict]` — returns `(graph, condensed_id, root_node)`. Handles 3 cases: pointer, self-condensed, fresh condense.
   - Internal `_build_and_persist` returns graph + id so sidecar-only sinks don't need a round-trip through `find_entity`.
   - Smoke-tested with fake source/sink — all three ensure-paths exercised.
-- 🟡 **#8 — Pipeline modules** extracted from `interpretation.py`:
+- [x] **#8 — Pipeline modules** extracted from `interpretation.py`:
   - [x] `pipeline/synthesize.py` — `GraphSynthesisResult`, `build_synthesis_prompt`, `synthesize_graph(tracker, root_node, step_annotations, llm_model, temperature, *, rate_limiter=None, graph_dict=None)`. Takes `TaskTracker` instead of `self`.
   - [x] `pipeline/build.py` — `build_aeg(rocrate_id, graph, step_annotations, synthesis, audience_perspectives, llm_model, temperature) -> AnnotatedEvidenceGraph`. Pure — no persistence, no ports.
-  - [ ] **`pipeline/annotate.py`** — still to do. Extract from `interpretation.py` lines 350–621:
+  - [x] **`pipeline/annotate.py`** — done. Extracted from `interpretation.py` lines 350–621:
     - `build_computation_prompt(computation, software_cache, index, stats_cache=None)` — was `_build_computation_prompt` (350–443)
     - `llm_to_annotated(llm_result, comp_id, llm_model, temperature)` — was `_llm_to_annotated` (444–506)
     - `annotate_single_computation(tracker, software, graph, computation, software_cache, index, llm_model, temperature, stats_cache=None)` — was `_annotate_single_computation` (507–544). Takes `TaskTracker` + (optionally) `SoftwareFetcher`.
@@ -252,8 +252,10 @@ mds_python/mds/src/fairscape_mds/crud/
 - **2026-04-20** — Audience syntheses stay disabled in the loop (commented-out `for aud in AUDIENCE_CONFIGS`). Match server current behavior exactly; do not re-enable without Justin's sign-off.
 - **2026-04-20** — `prefetch_all_software` and `prefetch_dataset_statistics` stay in the `Interpreter` orchestrator (not split into `pipeline/`). They are one-liners over the ports.
 - **2026-04-20** — `GraphSynthesisResult` lives in `pipeline/synthesize.py`, not in a shared models module. `build.py` imports it from there.
+- **2026-04-20** — `annotate_single_computation` signature dropped the optional `software`/`graph` parameters listed in the Phase 1 #8 plan. Rationale: the original `_annotate_single_computation` never consumed a `SoftwareFetcher` or raw `graph` — `software_cache` and `index` already cover its needs, and the orchestrator is responsible for prefetching. Added YAGNI-style; can be reintroduced if lazy-fetch ever replaces the prefetch pass.
+- **2026-04-20** — `MAX_PROMPT_DATASETS = 3` is defined as a module-level constant in `pipeline/annotate.py`. `MAX_STATS_COLUMNS` stays in `mds_python/interpretation.py` for now — it is unused by the shared code path.
 
-## Next-session smoke check (after Phase 1 #8 annotate finishes)
+## Next-session smoke check (post Phase 1 #8 — all three pipeline modules)
 
 ```bash
 PYTHONPATH=/Users/justin/Docs/Tim_Work/Git_Repos/fairscape-repos/fairscape_interpret/src python -c "
