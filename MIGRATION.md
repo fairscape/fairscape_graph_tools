@@ -1,7 +1,7 @@
 # Interpretation Pipeline Migration — Running Tracking Doc
 
-**Status:** Phase 1 complete — byte-identical regression + test-suite rewrite deferred to Phase 3
-**Last updated:** 2026-04-20
+**Status:** Phase 2 structural complete — server-vs-CLI cross-consistency run pending, folded into Phase 3
+**Last updated:** 2026-04-21
 **Driver:** Justin Niestroy (jniestroy@gmail.com)
 
 > This is the **running** handoff doc. Update it as you finish tasks — check boxes, record decisions, note surprises. Future-you will re-read this cold.
@@ -123,17 +123,19 @@ Tasks (do in order):
 
 **Phase 1 acceptance:** run both `interpret_rocrate` and `condense_rocrate` on an existing crate; outputs byte-identical to pre-refactor except timestamps. No new behavior. *(Folded into Phase 3 regression work — did not gate closing Phase 1 structural.)*
 
-### Phase 2 — CLI adoption ⏸️ PENDING
+### Phase 2 — CLI adoption ✅ STRUCTURAL DONE (2026-04-21)
 
-- [ ] `fairscape-cli/src/fairscape_cli/interpret/command.py` — Click subcommand.
-- [ ] `LocalGraphSource` — loads primary + reference crates via existing `ReadROCrateMetadata`.
-- [ ] `LocalResultSink` — sidecar JSON only; optional `--save-condensed`.
-- [ ] `InMemoryTaskTracker` — stdout progress + optional `--debug-llm` JSONL trace.
-- [ ] `LocalSoftwareFetcher` — local path → GitHub → `[source not fetched]` placeholder.
-- [ ] Register `fairscape interpret` subcommand in `__main__.py`.
-- [ ] Add deps in `fairscape-cli/pyproject.toml`: `fairscape_interpret`, `pydantic-ai`, `httpx`.
+All seven tasks landed. Cross-consistency run (server vs CLI same crate) deferred to Phase 3 alongside the byte-identical server regression.
 
-**Phase 2 acceptance:** server vs CLI on same crate — AEG sidecars diff only in persistence wrapping (no `StoredIdentifier` envelope, no reverse links).
+- [x] Add deps in `fairscape-cli/pyproject.toml`: `fairscape_interpret`, `pydantic-ai`, `httpx`. *(commit 92e9900)* — sibling editable install via `[tool.uv.sources] path = "../fairscape_interpret"`.
+- [x] `LocalGraphSource` — loads primary + reference crates via existing `ReadROCrateMetadata`. *(commit e8d7a37)* — merges every crate's `@graph` into an id-keyed index (first-loaded wins), and exposes `crate_dir_for(node_id)` as a CLI-local affordance so the SoftwareFetcher can resolve `file:///…` URIs. BFS in `build_full_graph` follows any reference that resolves in the index (not just `ark:`-prefixed ones) because local crates may use bare `@id`s.
+- [x] `LocalResultSink` — sidecar JSON only; optional `--save-condensed`. *(commit 4087d7d)* — `persist_aeg` always writes; `persist_condensed` writes only when the path is supplied, else keeps metadata in `last_condensed_metadata` for diagnostics. Carries `last_stats` so the command can print a stats line if it wants to.
+- [x] `InMemoryTaskTracker` — stdout progress + optional `--debug-llm` JSONL trace. *(commit 41421c7)* — mirrors the server's `asyncCollection` shape in-memory, emits a line on step transitions / per-computation completion / final status, appends raw LLM dumps when `debug_llm_path` is set.
+- [x] `LocalSoftwareFetcher` — local path → GitHub → `[source not fetched]` placeholder. *(commit 1af99b9)* — resolves `file:///<crate-rel>` URIs against the owning crate dir, then GitHub, then the placeholder. `prefetch_software_code` placeholder strings (starting with `[`) are detected and overridden with the CLI's own placeholder so the downstream prompt sees one consistent "no source" signal.
+- [x] `fairscape-cli/src/fairscape_cli/interpret/command.py` — Click subcommand. *(commit 3625b5e)* — `fairscape interpret run <path>` with `--reference`, `--llm-model`, `--temperature`, `--max-workers`, `--output`, `--save-condensed`, `--debug-llm`, `--quiet`. Finds the ROCrate root via `_is_rocrate_root`, derives a slugged default output filename from the root's `name`.
+- [x] Register `fairscape interpret` subcommand in `__main__.py`. *(commit 42960f0)* — added alongside the other top-level groups; `python -m fairscape_cli --help` lists `interpret`, `interpret run --help` shows the expected options.
+
+**Phase 2 acceptance:** server vs CLI on same crate — AEG sidecars diff only in persistence wrapping (no `StoredIdentifier` envelope, no reverse links). *(Deferred to Phase 3 — no fixture crate has been selected for the regression run yet; doing so requires sample data + API keys.)*
 
 ### Phase 3 — Hardening ⏸️ PENDING
 
@@ -266,6 +268,11 @@ mds_python/mds/src/fairscape_mds/crud/
 - **2026-04-20** — `MongoResultSink` grew a `self.last_stats` field, populated in `persist_condensed`. This is an adapter-local extension (not a new port method) so the thin-wrapper `condense_rocrate` can return `{"condensed_id", "stats"}` to the Celery worker without widening the `ResultSink` contract or re-reading the condensed doc.
 - **2026-04-20** — Seven unit tests in `tests/crud/test_interpretation.py` call methods on `FairscapeInterpretationRequest` that no longer exist after Phase 1 #11 (`_build_computation_prompt`, `ensure_condensed`, `_update_task`, `find_computations`). The file still *imports* cleanly — the re-export list in `interpretation.py` was chosen to match the test's `from ... import` line, and `import httpx` is retained so `patch("fairscape_mds.crud.interpretation.httpx.get")` still resolves. These seven tests are redundant with the Phase 3 plan to add pipeline-level tests against `fairscape_interpret` directly; left to fail rather than kept alive with method shims, to avoid ossifying the legacy shape.
 - **2026-04-20** — Closing Phase 1 on structural completion. Test-suite rewrite exists as uncommitted working-tree changes in `mds_python` (`tests/crud/test_interpretation.py`, 25/27 passing). Rationale: the two remaining failures are pre-existing model-schema bit rot (`GraphAssumption.sourceAnnotation` required, AEG description ≥10 chars) that predates Phase 1 #11 — confirmed via `git stash`/`stash pop` against `dbc9922`. Rolling both the rewrite and byte-identical regression into Phase 3 lets the server team pick up the thin-wrapper version of the CRUDs now rather than waiting on test hygiene.
+- **2026-04-21** — `LocalSoftwareFetcher` parses `file:///<crate-relative-path>` URIs rather than treating `contentUrl` as a `pathlib.Path` directly. FAIRSCAPE RO-Crates write local contentUrls as `file:///<path>` where the path after the third slash is relative to the crate root, not filesystem-absolute. Passing the raw string to `pathlib.Path` would mis-resolve it as starting at `/`. The adapter strips the `file://` prefix and any leading slashes, then joins against `crate_dir_for(sw_id)`. A bare relative path (no `file://` scheme) is still accepted for hand-authored crates.
+- **2026-04-21** — `LocalSoftwareFetcher` treats any return value from `prefetch_software_code` that starts with `[` as a miss and falls through to the `[source not fetched]` placeholder. Rationale: the shared helper returns bracketed strings like `[External URL, not fetched: ...]` and `[Local/relative path: ...]` for URLs it can't satisfy. If the CLI passed those directly to the annotation prompt, the LLM would see three different "no source" messages depending on URL shape. Collapsing to one placeholder keeps the downstream signal uniform.
+- **2026-04-21** — `LocalGraphSource.build_full_graph` follows any reference that resolves in the merged index rather than gating on `"ark:" in ref_id` the way the server's Mongo BFS does. Local crates may reference one another with bare `@id`s (`file-01.csv`, `metadata/subject_table.csv`) that don't carry the `ark:` prefix. Since our index is authoritative for "does this node exist," the prefix check would filter out valid local references. The server retains the ARK gate because its BFS is over MongoDB documents where non-ARK refs could legitimately be external URLs.
+- **2026-04-21** — `LocalGraphSource` merges reference crates into a single flat index rather than keeping per-crate namespaces. First-loaded wins on `@id` collision; the primary crate wins over references, and references win in the order passed. Rationale: the shared `Condenser` / `Interpreter` see one flat graph, and the user controls priority by argument order. If we ever need to disambiguate (e.g. report which crate a node came from), the parallel `_crate_dir` map already has that information — no adapter rework required.
+- **2026-04-21** — CLI default output is `./<slug(rocrate.name)>-interpretation.json`, not `./<rocrate-id>-interpretation.json`. ARK ids are filesystem-ugly and opaque; the crate's `name` field is what users mentally associate with "which crate is this." Slug keeps alnum + `-` + `_`, lowercased, so multi-run defaults in the same directory are distinguishable without the user thinking about it.
 
 ## Next-session smoke check (post Phase 1 #8 — all three pipeline modules)
 
