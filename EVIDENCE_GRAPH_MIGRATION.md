@@ -57,7 +57,10 @@ fairscape_graph_tools/                  (renamed from fairscape_interpret)
 
 ### Phase 0 — Rename `fairscape_interpret` → `fairscape_graph_tools` ✅ DONE (2026-04-21)
 
-No behavior change. One coordinated set of commits (one per repo). SHAs recorded below.
+No behavior change. One coordinated set of commits (one per repo):
+- `fairscape_graph_tools` (branch `main`): `542c9a2`
+- `mds_python` (branch `intepret`): `6642227`
+- `fairscape-cli` (branch `interpret`): `f2b9eb2`
 
 - [x] `fairscape_interpret/` directory → `fairscape_graph_tools/`
 - [x] `fairscape_graph_tools/pyproject.toml` — `name`, `[tool.setuptools.package-data]`
