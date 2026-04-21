@@ -1,6 +1,6 @@
 # Evidence-Graph Migration + Package Rename — Running Tracking Doc
 
-**Status:** Phase 0 done — rename landed. Next: Phase 1 (move `EvidenceGraph` + extract pure projection)
+**Status:** Phase 1 done — model + pure projection moved. Next: Phase 2 (ports + `EvidenceGraphBuilder` + Mongo adapters)
 **Last updated:** 2026-04-21
 **Driver:** Justin Niestroy (jniestroy@gmail.com)
 
@@ -85,13 +85,13 @@ print('rename OK')
 "
 ```
 
-### Phase 1 — Move `EvidenceGraph` model + extract pure projection ⏸️ PENDING
+### Phase 1 — Move `EvidenceGraph` model + extract pure projection ✅ DONE (2026-04-21)
 
-- [ ] Create `fairscape_graph_tools/src/fairscape_graph_tools/models/evidence_graph.py` — `EvidenceGraph`, `EvidenceNode`, `EvidenceGraphCreate`. Strip `build_graph` method from `EvidenceGraph`.
-- [ ] Create `fairscape_graph_tools/src/fairscape_graph_tools/pipeline/evidence_graph.py` — pure projection functions extracted from today's `EvidenceGraph` class:
+- [x] Create `fairscape_graph_tools/src/fairscape_graph_tools/models/evidence_graph.py` — `EvidenceGraph`, `EvidenceNode`, `EvidenceGraphCreate`. Stripped `build_graph` method from the shared `EvidenceGraph`.
+- [x] Create `fairscape_graph_tools/src/fairscape_graph_tools/pipeline/evidence_graph.py` — pure projection:
   - `build_graph_dict(start_node_id, node_cache) -> (graph_dict, outputs)`
   - `_build_node_from_cache`, `_extract_referenced_ids`, `_process_used_dataset`, `_flatten_metadata`, `_is_rocrate`, `_get_rocrate_outputs`
-- [ ] Shrink `mds_python/mds/src/fairscape_mds/models/evidence_graph.py` to a re-export shim. Keep `EvidenceGraphBuildRequest` and `list_evidence_graphs_from_db` (still Mongo-bound).
+- [x] Shrink `mds_python/mds/src/fairscape_mds/models/evidence_graph.py` to a shim. Re-exports `EvidenceGraphCreate` / `EvidenceNode` straight, and subclasses shared `EvidenceGraph` server-side to carry a temporary Mongo-aware `build_graph` (deleted in Phase 3 when `crud/evidence_graph.py` starts calling `EvidenceGraphBuilder`). `EvidenceGraphBuildRequest` + `list_evidence_graphs_from_db` stay in the shim.
 
 **Source material (original, 425 lines):**
 ```bash
@@ -197,6 +197,8 @@ Record the actual pre-refactor SHAs below as they're committed (so future-you ha
 - **2026-04-21** — `EvidenceGraphCreate` moves to shared pkg (it's a domain input model used by both the router and any future CLI create path). Low-risk move.
 - **2026-04-21** — `interpret_adapters.py` keeps its name even though it now also serves `EvidenceGraphBuilder`. Rename is churn; docstring note is sufficient. Revisit if a third orchestrator lands.
 - **2026-04-21** — Extend `LocalResultSink` and `LocalGraphSource` with the new methods rather than creating a separate `LocalEvidenceGraphSink`/`LocalEvidenceGraphSource`. Matches the "adapters implement all port methods" precedent from the interpret phase.
+- **2026-04-21 (Phase 1)** — Server-side shim uses a Pydantic subclass `class EvidenceGraph(SharedEvidenceGraph)` that re-adds the legacy `build_graph(mongo_collection, …)` method. Rationale: `crud/evidence_graph.py:155` still calls `evidence_graph.build_graph(…)` and doesn't get rewired until Phase 3; subclassing (rather than monkey-patching or editing the caller now) keeps the server byte-identical while the shared `EvidenceGraph` stays method-free. Subclass disappears in Phase 3 when the CRUD starts calling `EvidenceGraphBuilder`.
+- **2026-04-21 (Phase 1)** — Shim's `build_graph` preserves the original control flow (derive `output_nodes` + `start_rocrate_outputs` pre-BFS, condense, then project) rather than delegating to `build_graph_dict`. Rationale: `build_graph_dict(start_node_id, node_cache)` derives outputs from the *post-condense* cache, which could diverge from the current server behavior in the edge case where condensation prunes the start node (unlikely in practice but enough to break the "byte-identical on fixture crate" Phase 3 acceptance test). Using `_build_node_from_cache` directly in the shim keeps server output pre-Phase-3 byte-identical; the Phase 2 orchestrator can reconsider whether to capture outputs pre- or post-condense.
 
 ---
 

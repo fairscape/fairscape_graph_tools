@@ -25,6 +25,11 @@ from fairscape_graph_tools.models.annotated_evidence_graph import (
     DataOverview,
     GraphAssumption,
 )
+from fairscape_graph_tools.models.evidence_graph import (
+    EvidenceGraph,
+    EvidenceGraphCreate,
+    EvidenceNode,
+)
 
 __all__ = [
     "ANNOTATED_COMPUTATION_TYPE",
@@ -39,6 +44,9 @@ __all__ = [
     "ComputationReviewStatus",
     "DataOverview",
     "DatasetSummary",
+    "EvidenceGraph",
+    "EvidenceGraphCreate",
+    "EvidenceNode",
     "EvidencePointer",
     "GraphAssumption",
     "LLMAssumption",
