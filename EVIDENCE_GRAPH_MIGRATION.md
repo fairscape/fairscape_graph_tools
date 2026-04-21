@@ -87,6 +87,11 @@ print('rename OK')
 
 ### Phase 1 — Move `EvidenceGraph` model + extract pure projection ✅ DONE (2026-04-21)
 
+Commits:
+- `fairscape_graph_tools` @ `main`: `0db0525`
+- `mds_python` @ `intepret`: `6e0c5d8`
+
+
 - [x] Create `fairscape_graph_tools/src/fairscape_graph_tools/models/evidence_graph.py` — `EvidenceGraph`, `EvidenceNode`, `EvidenceGraphCreate`. Stripped `build_graph` method from the shared `EvidenceGraph`.
 - [x] Create `fairscape_graph_tools/src/fairscape_graph_tools/pipeline/evidence_graph.py` — pure projection:
   - `build_graph_dict(start_node_id, node_cache) -> (graph_dict, outputs)`
