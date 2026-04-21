@@ -14,20 +14,20 @@ from typing import List, Optional, Tuple
 from pydantic import BaseModel
 from pydantic_ai import Agent
 
-from fairscape_interpret.models.annotated_computation import (
+from fairscape_graph_tools.models.annotated_computation import (
     AnnotatedComputation,
     LLMAssumption,
 )
-from fairscape_interpret.pipeline.graph_utils import (
+from fairscape_graph_tools.pipeline.graph_utils import (
     _compute_dag_order,
     _resolve_refs,
 )
-from fairscape_interpret.ports import TaskTracker
-from fairscape_interpret.prompts import (
+from fairscape_graph_tools.ports import TaskTracker
+from fairscape_graph_tools.prompts import (
     AUDIENCE_CONFIGS,
     DATASCI_SYNTHESIS_PROMPT,
 )
-from fairscape_interpret.runtime import (
+from fairscape_graph_tools.runtime import (
     AsyncRateLimiter,
     run_agent_with_retry,
     run_async,

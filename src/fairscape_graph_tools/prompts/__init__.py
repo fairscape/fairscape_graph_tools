@@ -1,8 +1,8 @@
 """System + synthesis prompts for the AI-interpretation pipeline."""
 
-from fairscape_interpret.prompts.biostat import BIOSTAT_SYNTHESIS_PROMPT
-from fairscape_interpret.prompts.clinician import CLINICIAN_SYNTHESIS_PROMPT
-from fairscape_interpret.prompts.datasci import (
+from fairscape_graph_tools.prompts.biostat import BIOSTAT_SYNTHESIS_PROMPT
+from fairscape_graph_tools.prompts.clinician import CLINICIAN_SYNTHESIS_PROMPT
+from fairscape_graph_tools.prompts.datasci import (
     DATASCI_SYNTHESIS_PROMPT,
     DATASCI_SYSTEM_PROMPT,
 )

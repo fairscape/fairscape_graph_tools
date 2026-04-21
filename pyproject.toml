@@ -1,7 +1,7 @@
 [project]
-name = "fairscape-interpret"
+name = "fairscape-graph-tools"
 version = "0.1.0"
-description = "Storage-agnostic AI-interpretation pipeline for FAIRSCAPE RO-Crates. Shared core for mds_python (server) and fairscape-cli."
+description = "Storage-agnostic graph tools for FAIRSCAPE RO-Crates (condensation, evidence graphs, AI interpretation). Shared core for mds_python (server) and fairscape-cli."
 readme = "README.md"
 authors = [
     { name = "Justin Niestroy", email = "jniestroy@gmail.com" },
@@ -25,4 +25,4 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"fairscape_interpret" = ["py.typed"]
+"fairscape_graph_tools" = ["py.typed"]

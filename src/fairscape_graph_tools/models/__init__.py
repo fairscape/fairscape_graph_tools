@@ -1,6 +1,6 @@
 """Pydantic models for the annotated interpretation artifacts."""
 
-from fairscape_interpret.models.annotated_computation import (
+from fairscape_graph_tools.models.annotated_computation import (
     ANNOTATED_COMPUTATION_TYPE,
     AnnotatedComputation,
     Assumption,
@@ -18,7 +18,7 @@ from fairscape_interpret.models.annotated_computation import (
     normalize_assumption,
     normalize_error,
 )
-from fairscape_interpret.models.annotated_evidence_graph import (
+from fairscape_graph_tools.models.annotated_evidence_graph import (
     ANNOTATED_EVIDENCE_GRAPH_TYPE,
     AnnotatedEvidenceGraph,
     AudiencePerspective,

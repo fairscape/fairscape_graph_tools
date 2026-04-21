@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 
 from pydantic_ai import Agent
 
-from fairscape_interpret.models.annotated_computation import (
+from fairscape_graph_tools.models.annotated_computation import (
     AnnotatedComputation,
     CodeAnalysis,
     DatasetSummary,
@@ -28,11 +28,11 @@ from fairscape_interpret.models.annotated_computation import (
     normalize_assumption,
     normalize_error,
 )
-from fairscape_interpret.pipeline.graph_utils import _resolve_refs
-from fairscape_interpret.pipeline.stats import _format_dataset_stats
-from fairscape_interpret.ports import TaskTracker
-from fairscape_interpret.prompts import DATASCI_SYSTEM_PROMPT
-from fairscape_interpret.runtime import (
+from fairscape_graph_tools.pipeline.graph_utils import _resolve_refs
+from fairscape_graph_tools.pipeline.stats import _format_dataset_stats
+from fairscape_graph_tools.ports import TaskTracker
+from fairscape_graph_tools.prompts import DATASCI_SYSTEM_PROMPT
+from fairscape_graph_tools.runtime import (
     AsyncRateLimiter,
     run_agent_with_retry,
     run_async,

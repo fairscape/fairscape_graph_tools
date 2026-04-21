@@ -16,17 +16,17 @@ import re
 import uuid
 from typing import List
 
-from fairscape_interpret.models.annotated_computation import (
+from fairscape_graph_tools.models.annotated_computation import (
     AnnotatedComputation,
     normalize_assumption,
 )
-from fairscape_interpret.models.annotated_evidence_graph import (
+from fairscape_graph_tools.models.annotated_evidence_graph import (
     AnnotatedEvidenceGraph,
     AudiencePerspective,
     DataOverview,
     GraphAssumption,
 )
-from fairscape_interpret.pipeline.synthesize import GraphSynthesisResult
+from fairscape_graph_tools.pipeline.synthesize import GraphSynthesisResult
 
 logger = logging.getLogger(__name__)
 

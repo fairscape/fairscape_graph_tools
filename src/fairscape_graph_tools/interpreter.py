@@ -19,23 +19,23 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
-from fairscape_interpret.condenser import Condenser
-from fairscape_interpret.models.annotated_computation import AnnotatedComputation
-from fairscape_interpret.pipeline.annotate import annotate_computations_parallel
-from fairscape_interpret.pipeline.build import build_aeg
-from fairscape_interpret.pipeline.graph_utils import (
+from fairscape_graph_tools.condenser import Condenser
+from fairscape_graph_tools.models.annotated_computation import AnnotatedComputation
+from fairscape_graph_tools.pipeline.annotate import annotate_computations_parallel
+from fairscape_graph_tools.pipeline.build import build_aeg
+from fairscape_graph_tools.pipeline.graph_utils import (
     _build_index,
     _is_computation,
     _resolve_refs,
 )
-from fairscape_interpret.pipeline.synthesize import synthesize_graph
-from fairscape_interpret.ports import (
+from fairscape_graph_tools.pipeline.synthesize import synthesize_graph
+from fairscape_graph_tools.ports import (
     GraphSource,
     ResultSink,
     SoftwareFetcher,
     TaskTracker,
 )
-from fairscape_interpret.runtime import AsyncRateLimiter
+from fairscape_graph_tools.runtime import AsyncRateLimiter
 
 logger = logging.getLogger(__name__)
 

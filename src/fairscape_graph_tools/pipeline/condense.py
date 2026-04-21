@@ -12,7 +12,7 @@ import datetime
 from collections import defaultdict
 from typing import Dict, List
 
-from fairscape_interpret.pipeline.graph_utils import (
+from fairscape_graph_tools.pipeline.graph_utils import (
     get_evi_type,
     get_generatedby_ids,
     get_id_list,

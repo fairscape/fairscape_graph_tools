@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from typing import Tuple
 
-from fairscape_interpret.pipeline.condense import condense_graph
-from fairscape_interpret.pipeline.graph_utils import is_rocrate_root
-from fairscape_interpret.ports import GraphSource, ResultSink
+from fairscape_graph_tools.pipeline.condense import condense_graph
+from fairscape_graph_tools.pipeline.graph_utils import is_rocrate_root
+from fairscape_graph_tools.ports import GraphSource, ResultSink
 
 
 class Condenser:

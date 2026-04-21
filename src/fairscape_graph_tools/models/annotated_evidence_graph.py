@@ -10,7 +10,7 @@ from typing import Optional, List, Union, Dict, Any
 
 from fairscape_models.fairscape_base import IdentifierValue
 from fairscape_models.digital_object import DigitalObject
-from fairscape_interpret.models.annotated_computation import (
+from fairscape_graph_tools.models.annotated_computation import (
     AssumptionImpact,
     EvidencePointer,
 )
