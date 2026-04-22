@@ -1,7 +1,7 @@
 # Evidence-Graph Migration + Package Rename — Running Tracking Doc
 
-**Status:** Phase 1 done — model + pure projection moved. Next: Phase 2 (ports + `EvidenceGraphBuilder` + Mongo adapters)
-**Last updated:** 2026-04-21
+**Status:** Phase 4 done — CLI's `fairscape build evidence-graph` and `utils.build_utils.process_evidence_graph` now call `EvidenceGraphBuilder` through `LocalGraphSource`/`LocalResultSink`; the old `EvidenceGraphJSON` + `generate_evidence_graph_from_rocrate` are deleted. Next: Phase 5 (hardening). Byte-identical fixture-crate regression + server-vs-CLI cross-check still TODO (needs a live Mongo + server run).
+**Last updated:** 2026-04-22
 **Driver:** Justin Niestroy (jniestroy@gmail.com)
 
 > This is the **running** handoff doc for the evidence-graph migration and the `fairscape_interpret` → `fairscape_graph_tools` rename. Update as you finish tasks — check boxes, record decisions, note surprises. Future-you will re-read this cold.
@@ -103,15 +103,15 @@ Commits:
 git -C mds_python log --oneline -- mds/src/fairscape_mds/models/evidence_graph.py | head -5
 ```
 
-### Phase 2 — Ports + `EvidenceGraphBuilder` + Mongo adapters ⏸️ PENDING
+### Phase 2 — Ports + `EvidenceGraphBuilder` + Mongo adapters ✅ DONE (2026-04-22)
 
-- [ ] `fairscape_graph_tools/src/fairscape_graph_tools/ports.py` — add `find_many` to `GraphSource`, `persist_evidence_graph` to `ResultSink`.
-- [ ] `fairscape_graph_tools/src/fairscape_graph_tools/evidence_graph_builder.py` — `EvidenceGraphBuilder`. Internal flow: BFS via `find_many` → `condense_evidence_graph_cache` → `build_graph_dict` → assemble Pydantic model → `sink.persist_evidence_graph`.
-- [ ] `mds_python/mds/src/fairscape_mds/crud/interpret_adapters.py`:
-  - `MongoGraphSource.find_many` — batch `$in` find + `_flatten_metadata`
-  - `MongoResultSink.persist_evidence_graph` — port the `StoredIdentifier` + `Permissions` + `hasEvidenceGraph` writes from today's `build_evidence_graph_for_node` (lines 163–210 of `crud/evidence_graph.py`)
-  - `MongoResultSink.__init__` — add `owner_groups` kwarg (needed for `Permissions(group=...)`)
-  - Update module docstring — adapters now serve both `Interpreter` and `EvidenceGraphBuilder`.
+- [x] `fairscape_graph_tools/src/fairscape_graph_tools/ports.py` — add `find_many` to `GraphSource`, `persist_evidence_graph` to `ResultSink`.
+- [x] `fairscape_graph_tools/src/fairscape_graph_tools/evidence_graph_builder.py` — `EvidenceGraphBuilder`. Internal flow: BFS via `find_many` → `condense_evidence_graph_cache` → `_build_node_from_cache` → assemble Pydantic model → `sink.persist_evidence_graph`. Mirrors the shim's pre-condense output derivation (see Phase 2 decision below) rather than delegating to `build_graph_dict`, so Phase 3's byte-identical regression stays intact.
+- [x] `mds_python/mds/src/fairscape_mds/crud/interpret_adapters.py`:
+  - `MongoGraphSource.find_many` — batch `$in` find + pipeline's `_flatten_metadata` (imported as `_flatten_for_evidence_graph` so it doesn't collide with the module-local adapter flatten, which has different semantics).
+  - `MongoResultSink.persist_evidence_graph` — ports the `StoredIdentifier` + `Permissions` + `hasEvidenceGraph` writes from today's `build_evidence_graph_for_node` (lines 163–210 of `crud/evidence_graph.py`).
+  - `MongoResultSink.__init__` — added `owner_groups` kwarg; `persist_evidence_graph` picks `owner_groups[0]` for the `Permissions(group=...)` field, matching today's CRUD behavior.
+  - Docstring updated — adapters now serve both `Interpreter` and `EvidenceGraphBuilder`.
 
 **Phase 2 smoke check:**
 ```bash
@@ -124,32 +124,28 @@ print('evidence-graph shared pkg imports OK')
 "
 ```
 
-### Phase 3 — Shrink server CRUD + drop `condense` flag ⏸️ PENDING
+### Phase 3 — Shrink server CRUD + drop `condense` flag ✅ DONE (2026-04-22, awaiting regression run)
 
-- [ ] `mds_python/.../crud/evidence_graph.py`:
-  - `FairscapeEvidenceGraphRequest.build_evidence_graph_for_node(requesting_user, naan, postfix)` — drop `condense`, `condense_threshold`. Build 2 Mongo adapters, call `EvidenceGraphBuilder(source, sink).build(node_id, owner_email=..., name=..., description=...)`, round-trip via `get_evidence_graph` for the `FairscapeResponse` envelope.
-  - Target size: ~90 lines (was 212).
-  - `create_evidence_graph`, `get_evidence_graph`, `delete_evidence_graph`, `list_evidence_graphs` untouched.
-- [ ] `mds_python/.../routers/evidence_graph.py` — drop `condense` + `condense_threshold` `Query` params from `initiate_build_evidence_graph_for_node_route`.
-- [ ] `mds_python/.../worker.py` — drop `condense`, `condense_threshold` from `build_evidence_graph_task` signature and propagated calls.
-- [ ] `mds_python/.../models/evidence_graph.py` shim — drop `condense` and `condense_threshold` from `EvidenceGraphBuildRequest`.
+- [x] `mds_python/.../crud/evidence_graph.py`:
+  - `FairscapeEvidenceGraphRequest.build_evidence_graph_for_node(requesting_user, naan, postfix)` — dropped `condense`, `condense_threshold`. Builds `MongoGraphSource` + `MongoResultSink(owner_email, owner_groups)`, calls `EvidenceGraphBuilder(source, sink).build(node_id, owner_email=..., name=..., description=...)`, round-trips via `get_evidence_graph` for the `FairscapeResponse` envelope.
+  - 404 / 409 / idempotency status codes preserved by keeping the source-node pre-check and wrapping the builder call in a `DuplicateKeyError` handler. 201 vs 200 preserved by checking `hasEvidenceGraph` ourselves before delegating.
+  - `create_evidence_graph`, `get_evidence_graph`, `delete_evidence_graph`, `list_evidence_graphs` untouched. Final size 163 lines (was 212); shy of the ~90 target because the other four methods stayed verbatim.
+- [x] `mds_python/.../routers/evidence_graph.py` — dropped `condense` + `condense_threshold` `Query` params from `initiate_build_evidence_graph_for_node_route` and from the Celery `.delay(...)` kwargs. `Query` import removed since no query params remain.
+- [x] `mds_python/.../worker.py` — dropped `condense`, `condense_threshold` from `build_evidence_graph_task` signature and from the forwarded `build_evidence_graph_for_node` call.
+- [x] `mds_python/.../models/evidence_graph.py` shim — dropped `condense` / `condense_threshold` from `EvidenceGraphBuildRequest`. Also deleted the Phase 1 temporary `class EvidenceGraph(_SharedEvidenceGraph)` subclass with the Mongo-aware `build_graph` method (dead once CRUD calls `EvidenceGraphBuilder`); shim now re-exports the shared `EvidenceGraph` directly and drops the pipeline-helper + `pymongo` imports that only the subclass used. `list_evidence_graphs_from_db` + `EvidenceGraphBuildRequest` stay.
 
-**Phase 3 acceptance:** byte-identical regression on a fixture crate. Only `dateCreated`/`dateModified` should differ between pre- and post-refactor stored docs.
+**Phase 3 acceptance:** byte-identical regression on a fixture crate. Only `dateCreated`/`dateModified` should differ between pre- and post-refactor stored docs. **Status:** code landed; regression run blocked on a live Mongo + fixture crate — re-verify before cutting the Phase 3 commit(s). Import-level smoke (`EvidenceGraphBuildRequest` fields drop `condense*`; `EvidenceGraph` has no `build_graph` anymore; CRUD imports builder + adapters) passes.
 
-### Phase 4 — CLI catchup ⏸️ PENDING
+### Phase 4 — CLI catchup ✅ DONE (2026-04-22, awaiting server-vs-CLI cross-check)
 
-- [ ] `fairscape-cli/src/fairscape_cli/interpret/local_graph.py` — add `find_many(ark_ids) -> dict[ark_id, dict]`.
-- [ ] `fairscape-cli/src/fairscape_cli/interpret/local_sink.py` — add `persist_evidence_graph(evidence_graph, source_node_id) -> str` that writes the JSON sidecar.
-- [ ] `fairscape-cli/src/fairscape_cli/commands/build_commands.py` — rewire `generate_evidence_graph`:
-  - Load via `ReadROCrateMetadata` (per `feedback_rocrate_loading.md`, `project_rocrate_content_url.md`)
-  - `LocalGraphSource` + `LocalResultSink` → `EvidenceGraphBuilder.build(ark_id, ...)`
-  - Keep HTML generation via `generate_evidence_graph_html(...)`
-  - Keep `localEvidenceGraph` back-annotation
-- [ ] Delete `fairscape-cli/src/fairscape_cli/datasheet_builder/evidence_graph/graph_builder.py` — `EvidenceGraphJSON` + `generate_evidence_graph_from_rocrate` are dead.
-- [ ] Update `fairscape-cli/src/fairscape_cli/utils/build_utils.py:process_evidence_graph` to call the new path.
-- [ ] Keep `datasheet_builder/evidence_graph/html_builder.py` (visualization) unchanged.
+- [x] `fairscape-cli/src/fairscape_cli/interpret/local_graph.py` — added `find_many(ark_ids) -> dict[str, dict]`. Exact-match only against the merged `_index`, matching `MongoGraphSource.find_many` semantics. `find_entity` retains its dash-tolerant fallback for the root-id resolution step.
+- [x] `fairscape-cli/src/fairscape_cli/interpret/local_sink.py` — added `persist_evidence_graph(evidence_graph, source_node_id) -> str` that `mkdir -p`s the output path's parent and writes the Pydantic payload as JSON (by_alias, exclude_none). Doesn't back-annotate `localEvidenceGraph` on the source crate — the command does that *after* HTML generation so the reference points at the rendered `.html`.
+- [x] `fairscape-cli/src/fairscape_cli/commands/build_commands.py` — `generate_evidence_graph` rewired: build `LocalGraphSource(primary_path=metadata_file)`, resolve the user's ARK via `source.find_entity(ark_id)` (so dash-tolerant lookup stays), then run `EvidenceGraphBuilder(source, LocalResultSink(output_path=...)).build(resolved_id, owner_email=..., name=..., description=...)`. HTML generation + `localEvidenceGraph` back-annotation blocks kept verbatim. `generate_evidence_graph_from_rocrate` import dropped.
+- [x] `fairscape-cli/src/fairscape_cli/utils/build_utils.py:process_evidence_graph` — rewired identically to the command (same three-adapter construction, same `find_entity` resolve step); HTML + `localEvidenceGraph` back-annotation blocks unchanged.
+- [x] Deleted `fairscape-cli/src/fairscape_cli/datasheet_builder/evidence_graph/graph_builder.py` (`EvidenceGraphJSON` + `generate_evidence_graph_from_rocrate` dead). `__init__.py` had no exports to clean; `html_builder.py` untouched.
+- [x] `tests/commands/build_commands/test_build.py` — removed the five mock-based error-path tests (`_generation_error`, `_html_import_error`, `_html_generation_error`, `_html_returns_false`, `_metadata_update_error`); they all patched the now-deleted `generate_evidence_graph_from_rocrate` seam. Updated `test_build_evidence_graph_success`'s `@id` assertion to the new server-style shape (`ark:59852/evidence-graph-<postfix>`). Phase 5's E2E tests will replace the deleted error-path coverage with fixture-based tests.
 
-**Phase 4 acceptance:** `fairscape build evidence-graph <fixture> <ark>` sidecar matches server `StoredIdentifier.metadata.@graph` exactly.
+**Phase 4 acceptance:** `fairscape build evidence-graph <fixture> <ark>` sidecar matches server `StoredIdentifier.metadata.@graph` exactly. **Status:** code landed; smoke checks confirm `LocalResultSink.persist_evidence_graph` writes a valid pydantic payload, `LocalGraphSource.find_many` returns the expected shape, and `build_commands` imports cleanly with zero stale symbols. Server-vs-CLI cross-fixture byte-match still needs a live Mongo + both CLIs running on the same fixture crate — punt to Phase 5 alongside the server regression run.
 
 ### Phase 5 — Hardening ⏸️ PENDING
 
@@ -204,6 +200,16 @@ Record the actual pre-refactor SHAs below as they're committed (so future-you ha
 - **2026-04-21** — Extend `LocalResultSink` and `LocalGraphSource` with the new methods rather than creating a separate `LocalEvidenceGraphSink`/`LocalEvidenceGraphSource`. Matches the "adapters implement all port methods" precedent from the interpret phase.
 - **2026-04-21 (Phase 1)** — Server-side shim uses a Pydantic subclass `class EvidenceGraph(SharedEvidenceGraph)` that re-adds the legacy `build_graph(mongo_collection, …)` method. Rationale: `crud/evidence_graph.py:155` still calls `evidence_graph.build_graph(…)` and doesn't get rewired until Phase 3; subclassing (rather than monkey-patching or editing the caller now) keeps the server byte-identical while the shared `EvidenceGraph` stays method-free. Subclass disappears in Phase 3 when the CRUD starts calling `EvidenceGraphBuilder`.
 - **2026-04-21 (Phase 1)** — Shim's `build_graph` preserves the original control flow (derive `output_nodes` + `start_rocrate_outputs` pre-BFS, condense, then project) rather than delegating to `build_graph_dict`. Rationale: `build_graph_dict(start_node_id, node_cache)` derives outputs from the *post-condense* cache, which could diverge from the current server behavior in the edge case where condensation prunes the start node (unlikely in practice but enough to break the "byte-identical on fixture crate" Phase 3 acceptance test). Using `_build_node_from_cache` directly in the shim keeps server output pre-Phase-3 byte-identical; the Phase 2 orchestrator can reconsider whether to capture outputs pre- or post-condense.
+- **2026-04-22 (Phase 2)** — `EvidenceGraphBuilder` replicates the shim's pre-condense output-derivation flow rather than switching to `build_graph_dict`. Rationale: Phase 3 acceptance is a byte-identical fixture-crate regression; keeping the pre-condense derivation in the orchestrator makes the Phase 3 rewire mechanically trivial (same control flow, different data-access seam) and removes any risk of a divergence slipping in between "move method into class" and "swap for builder." `build_graph_dict` stays available as the pure-projection helper for future consumers (e.g., a CLI codepath that never condenses) but is not on the server hot path.
+- **2026-04-22 (Phase 2)** — `EvidenceGraphBuilder.build` short-circuits when the start node already carries `hasEvidenceGraph`, returning the existing id without calling `sink.persist_evidence_graph`. Rationale: keeps the idempotency contract from today's `build_evidence_graph_for_node` inside the orchestrator so Phase 3's CRUD can stay thin (it will just round-trip the returned id through `get_evidence_graph`). Builder never re-validates the existing stored doc — that's the caller's job on the return trip.
+- **2026-04-22 (Phase 2)** — `MongoGraphSource.find_many` uses `fairscape_graph_tools.pipeline.evidence_graph._flatten_metadata` (imported as `_flatten_for_evidence_graph`), not the module-local `_flatten_metadata` that `find_entity` uses. Rationale: the two helpers have genuinely different semantics — the pipeline's preserves sibling top-level storage fields while lifting `metadata.*`, whereas the adapter's strips everything outside `metadata` + `@id`/`@type`. The shim BFS used the pipeline version; matching that keeps Phase 3's byte-identical regression intact. The local helper stays correct for `find_entity` / the condensation pipeline, so we didn't collapse the two.
+- **2026-04-22 (Phase 3)** — CRUD still does its own `hasEvidenceGraph` pre-check *before* calling the builder, even though the builder also short-circuits on it. Rationale: without the pre-check we can't distinguish "fresh build" (201) from "already existed" (200) based only on the returned id. Keeping the CRUD check is the least-surprising way to preserve HTTP semantics without threading a `was_new` flag through the port contract. The builder's own short-circuit stays useful for other callers (CLI, tests) and as a defense-in-depth guard against back-pointers written between our check and our build.
+- **2026-04-22 (Phase 3)** — CRUD round-trips through `get_evidence_graph(returned_id)` and then overrides `statusCode=201` on the success envelope, rather than having the builder return the full `StoredIdentifier`. Rationale: the builder stays storage-agnostic and returns just the id; the CRUD owns the FastAPI-facing status-code policy. Tradeoff: one extra Mongo read per build. Acceptable (this is a 202 async task already).
+- **2026-04-22 (Phase 3)** — The Phase 1 `class EvidenceGraph(_SharedEvidenceGraph)` subclass (holder for the temporary Mongo-aware `build_graph`) is removed. The shim now re-exports the shared `EvidenceGraph` directly. Rationale: once CRUD calls `EvidenceGraphBuilder`, nothing on the server calls `.build_graph()` on the model, and keeping the subclass around would drift from "model in the shared pkg is the model" — the whole point of the rename-and-extract. Grepped both `mds_python/src` and `fairscape-cli/src` to confirm no `.build_graph(` callers on the model remain (the CLI hit in `datasheet_builder/evidence_graph/graph_builder.py` is on the unrelated `EvidenceGraphJSON` class, which Phase 4 deletes outright).
+- **2026-04-22 (Phase 4)** — CLI command resolves the user's ARK via `source.find_entity(ark_id)` (dash-tolerant) *before* feeding the canonical id into `EvidenceGraphBuilder.build(...)`. Rationale: the builder's internal lookups use `find_many`, which is exact-match-only to stay aligned with `MongoGraphSource.find_many` for byte-match semantics. If we lost dash-tolerance at the CLI root, users with slightly-mis-dashed ARKs would silently get error-stub graphs. Resolving up front means the builder sees the canonical id either way and CLI users keep the convenience.
+- **2026-04-22 (Phase 4)** — CLI evidence-graph `@id` shape changes from `{node_id}-evidence-graph` (old `EvidenceGraphJSON`) to `ark:NAAN/evidence-graph-<postfix>` (the builder's `_derive_evidence_graph_id`). Rationale: the Phase 4 acceptance target is "sidecar matches server `StoredIdentifier.metadata.@graph` exactly"; aligning the outer `@id` shape with the server convention is the whole point. Test suite updated to assert the new shape.
+- **2026-04-22 (Phase 4)** — The five mock-based error-path tests that patched `generate_evidence_graph_from_rocrate` are deleted rather than partially rewired. Rationale: they tested implementation details of the pre-refactor generator (single patch point, specific error messages); the new flow has no equivalent seam and Phase 5 writes fixture-based CLI E2E tests with materially better coverage. Keeping the old tests half-wired to arbitrary patch targets would encode fragile assumptions about the builder's internals.
+- **2026-04-22 (Phase 4)** — `LocalResultSink.persist_evidence_graph` does NOT back-annotate `localEvidenceGraph` on the source crate. Rationale: the existing CLI contract writes that field pointing at the *HTML* visualization, which isn't produced until after the JSON sidecar lands. The command/utility code owns the HTML → JSON ordering, so back-annotation stays there — the sink only writes the JSON payload and returns.
 
 ---
 

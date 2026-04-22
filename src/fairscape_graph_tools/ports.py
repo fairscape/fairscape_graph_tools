@@ -17,6 +17,7 @@ from typing import Iterable, Protocol, runtime_checkable
 
 from fairscape_graph_tools.models.annotated_computation import AnnotatedComputation
 from fairscape_graph_tools.models.annotated_evidence_graph import AnnotatedEvidenceGraph
+from fairscape_graph_tools.models.evidence_graph import EvidenceGraph
 
 
 @runtime_checkable
@@ -33,6 +34,18 @@ class GraphSource(Protocol):
         dict (the metadata payload, not a StoredIdentifier wrapper) or
         None if not found. Must apply dash-tolerant / ark-prefix-flexible
         matching on miss (see `flexible_ark_query`)."""
+        ...
+
+    def find_many(self, ark_ids: Iterable[str]) -> dict[str, dict]:
+        """Batch-fetch entities by ARK. Returns `{ark_id: flattened_dict}`
+        for every id that resolved; missing ids are simply absent from the
+        result (callers decide how to stub them).
+
+        Used by `EvidenceGraphBuilder`'s BFS to fan out one level at a
+        time with a single `$in` query instead of N single-entity calls.
+        Exact match only — dash-tolerant matching belongs in
+        `find_entity`, which the builder calls only for the root lookup.
+        """
         ...
 
     def find_dataset_stats(self, ark_ids: Iterable[str]) -> dict[str, dict]:
@@ -94,6 +107,23 @@ class ResultSink(Protocol):
         annotated computation. CLI: write sidecar JSON.
 
         Returns the stored `@id` of the AEG."""
+        ...
+
+    def persist_evidence_graph(
+        self,
+        evidence_graph: EvidenceGraph,
+        source_node_id: str,
+    ) -> str:
+        """Store the standard (non-annotated) evidence graph and set the
+        back-pointer on the source node.
+
+        Server: wrap in a StoredIdentifier, insert into
+        identifierCollection, and `$set metadata.hasEvidenceGraph = {@id}`
+        on the source node. CLI: write a sidecar JSON file next to the
+        source RO-Crate and annotate `localEvidenceGraph` on the source
+        node.
+
+        Returns the stored `@id` of the evidence graph."""
         ...
 
 
