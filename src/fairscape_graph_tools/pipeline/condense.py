@@ -234,9 +234,6 @@ def traverse_and_condense(
                 for ds_id in input_ids:
                     stack.append(ds_id)
 
-            for out_id in get_id_list(node, "generated"):
-                stack.append(out_id)
-
         elif evi_type == "Experiment":
             for ref_id in get_id_list(node, "usedSample", "usedInstrument",
                                       "usedTreatment", "usedStain"):

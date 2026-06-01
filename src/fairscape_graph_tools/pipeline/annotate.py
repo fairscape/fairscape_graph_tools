@@ -19,6 +19,7 @@ import uuid
 from typing import Dict, List, Optional
 
 from pydantic_ai import Agent
+from pydantic_ai.settings import ModelSettings
 
 from fairscape_graph_tools.models.annotated_computation import (
     AnnotatedComputation,
@@ -41,6 +42,7 @@ from fairscape_graph_tools.runtime import (
 logger = logging.getLogger(__name__)
 
 MAX_PROMPT_DATASETS = 3
+MAX_OUTPUT_TOKENS = 8192
 
 
 def build_computation_prompt(
@@ -229,16 +231,20 @@ async def annotate_single_computation(
     llm_model: str,
     temperature: float,
     stats_cache: Optional[Dict[str, dict]] = None,
+    prompt: Optional[str] = None,
 ) -> AnnotatedComputation:
     """Annotate a single computation using PydanticAI.
 
     `software_cache` and `stats_cache` are populated by the orchestrator
     before this is called; the `SoftwareFetcher` and `GraphSource` ports
-    are not reached from inside annotation.
+    are not reached from inside annotation. If `prompt` is provided it is
+    reused (avoids double-building when the caller estimated tokens for the
+    rate limiter).
     """
-    prompt = build_computation_prompt(
-        computation, software_cache, index, stats_cache=stats_cache
-    )
+    if prompt is None:
+        prompt = build_computation_prompt(
+            computation, software_cache, index, stats_cache=stats_cache
+        )
     comp_id = computation.get("@id", f"ark:59853/computation-{uuid.uuid4()}")
 
     agent = Agent(
@@ -246,10 +252,15 @@ async def annotate_single_computation(
         output_type=LLMComputationAnnotation,
         system_prompt=DATASCI_SYSTEM_PROMPT,
         retries=3,
+        model_settings=ModelSettings(max_tokens=MAX_OUTPUT_TOKENS, temperature=temperature),
     )
 
     result = await run_agent_with_retry(agent, prompt)
     llm_output: LLMComputationAnnotation = result.output
+
+    llm_output = await _repair_missing_fields(
+        agent, prompt, llm_output, computation, comp_id
+    )
 
     tracker.push_llm_result(
         f"computation:{comp_id}",
@@ -257,6 +268,72 @@ async def annotate_single_computation(
     )
 
     return llm_to_annotated(llm_output, comp_id, llm_model, temperature)
+
+
+async def _repair_missing_fields(
+    agent: Agent,
+    prompt: str,
+    llm_output: LLMComputationAnnotation,
+    computation: dict,
+    comp_id: str,
+) -> LLMComputationAnnotation:
+    """If the prompt included software/datasets but the LLM skipped the
+    corresponding structured arrays, ask it once to fill them in. Haiku in
+    particular tends to produce prose-only stepSummaries and leave
+    codeAnalysis/inputSummaries/outputSummaries at the schema default of [].
+    """
+    software_refs = _resolve_refs(computation.get("usedSoftware"))
+    input_refs = _resolve_refs(computation.get("usedDataset"))
+    output_refs = _resolve_refs(computation.get("generated"))
+
+    missing = []
+    if software_refs and not (llm_output.codeAnalysis or []):
+        missing.append(
+            f"codeAnalysis (expected {len(software_refs)} entry/entries — one per software in the prompt)"
+        )
+    if input_refs and not (llm_output.inputSummaries or []):
+        missing.append(
+            f"inputSummaries (expected {min(len(input_refs), MAX_PROMPT_DATASETS)} entry/entries)"
+        )
+    if output_refs and not (llm_output.outputSummaries or []):
+        missing.append(
+            f"outputSummaries (expected {min(len(output_refs), MAX_PROMPT_DATASETS)} entry/entries)"
+        )
+
+    if not missing:
+        return llm_output
+
+    logger.warning(
+        f"Incomplete annotation for {comp_id}: missing {missing}. Re-prompting."
+    )
+
+    repair_prompt = (
+        prompt
+        + "\n\n## Correction\n"
+        + "Your previous response omitted required fields: "
+        + "; ".join(missing)
+        + ". Produce the SAME annotation again but with those arrays fully populated. "
+        + "Every software entity in the Software section MUST have its own codeAnalysis "
+        + "entry; every dataset in Input/Output sections MUST have its own summary."
+    )
+
+    try:
+        result = await run_agent_with_retry(agent, repair_prompt)
+        repaired: LLMComputationAnnotation = result.output
+    except Exception as e:
+        logger.warning(f"Repair re-prompt for {comp_id} failed: {e}; keeping original output")
+        return llm_output
+
+    merged = LLMComputationAnnotation(
+        stepSummary=repaired.stepSummary or llm_output.stepSummary,
+        codeAnalysis=repaired.codeAnalysis or llm_output.codeAnalysis,
+        inputSummaries=repaired.inputSummaries or llm_output.inputSummaries,
+        outputSummaries=repaired.outputSummaries or llm_output.outputSummaries,
+        assumptions=repaired.assumptions or llm_output.assumptions,
+        errors=repaired.errors or llm_output.errors,
+        computationStatus=repaired.computationStatus or llm_output.computationStatus,
+    )
+    return merged
 
 
 async def annotate_computations_async(
@@ -275,8 +352,12 @@ async def annotate_computations_async(
 
     async def _annotate_one(comp):
         comp_id = comp.get("@id", "unknown")
+        prompt = build_computation_prompt(
+            comp, software_cache, index, stats_cache=stats_cache
+        )
+        est_tokens = len(prompt) // 4
         if rate_limiter:
-            await rate_limiter.acquire()
+            await rate_limiter.acquire(tokens=est_tokens)
         try:
             annotated = await annotate_single_computation(
                 tracker,
@@ -286,6 +367,7 @@ async def annotate_computations_async(
                 llm_model,
                 temperature,
                 stats_cache=stats_cache,
+                prompt=prompt,
             )
             tracker.update_computation_status(comp_id, {"status": "done"})
             return ("ok", comp_id, annotated)

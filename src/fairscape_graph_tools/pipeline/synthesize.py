@@ -139,11 +139,12 @@ def synthesize_graph(
     tracker.update({"current_step": "SYNTHESIZING", "status": "SYNTHESIZING"})
 
     prompt = build_synthesis_prompt(root_node, step_annotations, graph_dict=graph_dict)
+    est_tokens = len(prompt) // 4
 
     async def _run_all_syntheses():
         async def _run_one(system_prompt: str, label: str) -> GraphSynthesisResult:
             if rate_limiter:
-                await rate_limiter.acquire()
+                await rate_limiter.acquire(tokens=est_tokens)
             agent = Agent(
                 llm_model,
                 output_type=GraphSynthesisResult,

@@ -22,8 +22,9 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-# 50KB per software entity.
-MAX_SOFTWARE_BYTES = 50_000
+# 25KB per software entity -- keeps input-token cost down so the LLM has
+# enough output budget for structured codeAnalysis/assumptions arrays.
+MAX_SOFTWARE_BYTES = 25_000
 
 CODE_EXTENSIONS = {
     ".py", ".r", ".R", ".sh", ".pl", ".java", ".scala", ".jl", ".m",

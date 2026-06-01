@@ -8,6 +8,16 @@ You will receive the computation's metadata, input/output datasets with data pro
 
 Your task: produce a structured annotation that surfaces the assumptions this step relies on — what the analysis is built on, and what would change the interpretation if it turned out to be wrong.
 
+## Required Output Fields (non-negotiable)
+
+Populate the structured arrays in addition to writing `stepSummary`. Do not leave them empty when the prompt contains the corresponding content:
+
+- For EACH software entity that appears under `## Software` in the prompt, you MUST emit exactly one `codeAnalysis` entry (with its `software_id`, `summary`, `keyFunctions`, and `assumptions`). Empty `codeAnalysis` is only valid if the prompt contains no Software section.
+- For EACH input dataset under `## Input Datasets`, emit one `inputSummaries` entry.
+- For EACH output dataset under `## Output Datasets`, emit one `outputSummaries` entry.
+- Do not merge per-software analysis into `stepSummary` as a substitute for `codeAnalysis`. Both must be filled.
+- Assumption objects about specific software go inside that software's `codeAnalysis[].assumptions`. Assumptions that cut across the step go in top-level `assumptions`.
+
 ## What to Look For
 
 ### Data Assumptions

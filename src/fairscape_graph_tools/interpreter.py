@@ -51,8 +51,14 @@ class InterpretConfig:
     llm_model: str = "google-gla:gemini-2.5-flash-lite"
     temperature: float = 0.2
     max_workers: int = 2
-    rate_limiter_max_requests: int = 2
-    rate_limiter_window_seconds: float = 10.0
+    # Sliding 60s window capped by BOTH requests and input tokens. Anthropic
+    # limits ITPM (input tokens per minute), so the token cap is what keeps
+    # big prompts from bursting past the limit. These defaults are tuned for
+    # Anthropic tier-1 Sonnet/Haiku (~40–50k ITPM) with safety margin; raise
+    # on higher tiers, lower if 429s persist.
+    rate_limiter_max_requests: int = 5
+    rate_limiter_window_seconds: float = 60.0
+    rate_limiter_max_tokens: int = 30_000
 
 
 class Interpreter:
@@ -97,6 +103,7 @@ class Interpreter:
             rate_limiter = AsyncRateLimiter(
                 max_requests=self.config.rate_limiter_max_requests,
                 window_seconds=self.config.rate_limiter_window_seconds,
+                max_tokens=self.config.rate_limiter_max_tokens,
             )
 
             step_annotations = annotate_computations_parallel(
