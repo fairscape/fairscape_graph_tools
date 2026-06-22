@@ -1,6 +1,6 @@
 [project]
 name = "fairscape-graph-tools"
-version = "0.1.0"
+version = "0.2.0"
 description = "Storage-agnostic graph tools for FAIRSCAPE RO-Crates (condensation, evidence graphs, AI interpretation). Shared core for mds_python (server) and fairscape-cli."
 readme = "README.md"
 authors = [
@@ -14,7 +14,7 @@ dependencies = [
     "pydantic>=2.5.1",
     "pydantic-ai>=0.1.0",
     "httpx>=0.28.1",
-    "fairscape_models>=1.1.1",
+    "fairscape_models>=1.1.4",
 ]
 
 [build-system]
